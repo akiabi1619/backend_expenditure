@@ -1,57 +1,86 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const Record = require('./model/Record'); // Assuming Record model is correctly defined in './model/Record'
-// const moment = require('moment');
-
-
-// // Get current date
-// var currentDate = moment();
-
-// Format the date if needed
-// var formattedDate = currentDate.format('YYYY-MM-DD');
-
-// console.log(formattedDate); // Output: current date in YYYY-MM-DD format
-
-
+const cors = require('cors');
+const Record = require('./model/Record');
+const Counter = require('./model/counter'); // Import the Counter model
+const User = require('./model/User'); // Import the User model
 const app = express();
 const port = 3000;
 
 // Middleware
 app.use(express.json()); // Parse JSON bodies
+app.use(cors()); // Enable CORS for all routes
 
-// MongoDB Connection
-mongoose.connect('mongodb+srv://akiabi72:X5UDw4UcjZrExJq@cluster0.b9wwtay.mongodb.net/mydatabase', { useNewUrlParser: true, useUnifiedTopology: true })
+// Connect to MongoDB
+mongoose.connect('mongodb+srv://akiabi72:X5UDw4UcjZrExJq@cluster0.b9wwtay.mongodb.net/mydatabase', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
   .then(() => console.log('Connected to MongoDB...'))
   .catch(err => console.error('Could not connect to MongoDB...', err));
 
-// Create a Record
+// Function to get the next sequence value for a given sequence name
+const getNextSequenceValue = async (sequenceName) => {
+  const sequenceDocument = await Counter.findByIdAndUpdate(
+    { _id: sequenceName },
+    { $inc: { sequence_value: 1 } },
+    { new: true, upsert: true }
+  );
+  return sequenceDocument.sequence_value;
+};
+
+// Signup route
+app.post('/signup', async (req, res) => {
+  const { username, password } = req.body;
+  const user = new User({ username, password });
+  try {
+    await user.save();
+    res.status(201).send('User created');
+  } catch (error) {
+    res.status(400).send('Error creating user');
+  }
+});
+
+// Login route
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+  const user = await User.findOne({ username, password });
+  if (user) {
+    res.json({ success: true });
+  } else {
+    res.json({ success: false });
+  }
+});
+
+// Create a new record
 app.post('/records', async (req, res) => {
   try {
-    console.log('Request Body:', req.body); // Log the request body
+    console.log('Request Body:', req.body);
 
-    // Set the current date if not provided
+    const nextEid = await getNextSequenceValue('eid');
+
     const recordData = {
-      eid: req.body.eid,
+      eid: nextEid,
       title: req.body.title,
       category: req.body.category,
       amount: req.body.amount,
-      date: req.body.date 
+      date: req.body.date,
     };
-    
-    console.log('Record Data:', recordData); // Log the record data before saving
+
+    console.log('Record Data:', recordData);
 
     let record = new Record(recordData);
-    console.log('Record to be saved:', record); // Log the record to be saved
+    console.log('Record to be saved:', record);
 
     record = await record.save();
     res.send(record);
   } catch (err) {
-    console.error('Error:', err); // Log the error
+    console.error('Error:', err);
     res.status(400).send(err);
   }
 });
 
-// Get All Records
+// Get all records
 app.get('/records', async (req, res) => {
   try {
     const records = await Record.find();
@@ -61,7 +90,7 @@ app.get('/records', async (req, res) => {
   }
 });
 
-// Get a Single Record by eid
+// Get a record by eid
 app.get('/records/:eid', async (req, res) => {
   try {
     const record = await Record.findOne({ eid: req.params.eid });
@@ -72,34 +101,36 @@ app.get('/records/:eid', async (req, res) => {
   }
 });
 
-// Update a Record by eid
+// Update a record by eid
 app.put('/records/:eid', async (req, res) => {
   try {
+    const { title, amount, date, category } = req.body;
     const record = await Record.findOneAndUpdate(
       { eid: req.params.eid },
-      {
-        title: req.body.title,
-        category: req.body.category,
-        amount: req.body.amount,
-        date: req.params.date
-      },
+      { title, amount, date, category },
       { new: true }
     );
-    if (!record) return res.status(404).send('Record not found');
+
+    if (!record) {
+      return res.status(404).send('Record not found');
+    }
+
     res.send(record);
-  } catch (err) {
-    res.status(400).send(err);
+  } catch (error) {
+    res.status(500).send('Error updating record');
   }
 });
 
-// Delete a Record by eid
+// Delete a record by eid
 app.delete('/records/:eid', async (req, res) => {
   try {
-    const record = await Record.findOneAndDelete({ eid: req.params.eid });
-    if (!record) return res.status(404).send('Record not found');
-    res.status(204).send();
-  } catch (err) {
-    res.status(500).send(err);
+    const result = await Record.findOneAndDelete({ eid: req.params.eid });
+    if (!result) {
+      return res.status(404).send('Record not found');
+    }
+    res.send('Record deleted successfully');
+  } catch (error) {
+    res.status(500).send('Error deleting record');
   }
 });
 
